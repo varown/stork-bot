@@ -28,6 +28,8 @@ npm install
   "isVerifying": false
 }
 ```
+<img width="316" alt="image" src="https://github.com/user-attachments/assets/6b7753bc-84ce-4506-92fa-cd6517f3620b" />
+
 
 ## 启动
 ```sh
