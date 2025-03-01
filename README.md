@@ -8,7 +8,7 @@
 1. 克隆此仓库到本地：
 
 ```sh
-git clone <repository-url>
+git clone https://github.com/varown/stork-bot.git
 cd stork-bot
 ```
 2. 安装依赖：
@@ -16,16 +16,23 @@ cd stork-bot
 npm install
 ```
 ## 配置
-- 创建并填写 tokens.json 文件：
+- 创建并填写 config.json 文件：
 
-- 如果 tokens.json 文件不存在，程序会自动创建一个模板文件。你需要从 Stork Verify 应用的 localStorage 中复制令牌并粘贴到 tokens.json 文件中。
 ```sh
 {
-  "accessToken": "<你的访问令牌>",
-  "idToken": "<你的ID令牌>",
-  "refreshToken": "<你的刷新令牌>",
-  "isAuthenticated": true,
-  "isVerifying": false
+  "cognito": {
+    "region": "ap-northeast-1",
+    "clientId": "5msns4n49hmg3dftp2tp1t2iuh",
+    "userPoolId": "ap-northeast-1_M22I44OpC",
+    "username": "your-email@example.com",
+    "password": "your-password"
+  },
+  "stork": {
+    "intervalSeconds": 5
+  },
+  "threads": {
+    "maxWorkers": 1
+  }
 }
 ```
 
