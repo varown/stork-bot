@@ -415,7 +415,7 @@ if (!isMainThread) {
 } else {
   let previousStats = { validCount: 0, invalidCount: 0 };
 
-  async function runValidationProcess(tokenManager) {
+  async function runValidationProcess(tokenManager, total) {
     try {
       log("--------- 开始验证过程 ---------");
       const tokens = await getTokens();
@@ -487,26 +487,10 @@ if (!isMainThread) {
       const results = await Promise.all(workers);
       const successCount = results.filter((r) => r.success).length;
       log(`成功处理了 ${successCount}/${results.length} 个验证`);
-
-      const updatedUserData = await getUserStats(tokens);
-      const newValidCount =
-        updatedUserData.stats.stork_signed_prices_valid_count || 0;
-      const newInvalidCount =
-        updatedUserData.stats.stork_signed_prices_invalid_count || 0;
-
-      const actualValidIncrease = newValidCount - previousStats.validCount;
-      const actualInvalidIncrease =
-        newInvalidCount - previousStats.invalidCount;
-
-      previousStats.validCount = newValidCount;
-      previousStats.invalidCount = newInvalidCount;
-
-      displayStats(updatedUserData);
-      log(`--------- 验证总结 ---------`);
-      log(`处理的数据总数: ${actualValidIncrease + actualInvalidIncrease}`);
-      log(`成功: ${actualValidIncrease}`);
-      log(`失败: ${actualInvalidIncrease}`);
-      log("--------- 完成 ---------");
+      if (total === 1) {
+        const updatedUserData = await getUserStats(tokens);
+        displayStats(updatedUserData);
+      }
     } catch (error) {
       log(`验证过程停止: ${error.message}`, "ERROR");
     }
@@ -517,8 +501,6 @@ if (!isMainThread) {
       log("没有可显示的有效统计数据", "WARN");
       return;
     }
-
-    console.clear();
     console.log(`时间: ${getTimestamp()}`);
     console.log("---------------------------------------------");
     console.log(`用户: ${userData.email || "N/A"}`);
@@ -545,14 +527,18 @@ if (!isMainThread) {
     const tokenManager = new TokenManager();
 
     try {
+      let total = 1;
       await tokenManager.getValidToken();
       log("初始认证成功");
 
-      runValidationProcess(tokenManager);
-      setInterval(
-        () => runValidationProcess(tokenManager),
-        config.stork.intervalSeconds * 1000
-      );
+      runValidationProcess(tokenManager, total);
+      setInterval(() => {
+        total++;
+        if (total >= 60) {
+          total = 1;
+        }
+        runValidationProcess(tokenManager, total);
+      }, config.stork.intervalSeconds * 1000);
       setInterval(async () => {
         await tokenManager.getValidToken();
         log("通过 Cognito 刷新令牌");
