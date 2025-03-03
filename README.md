@@ -16,24 +16,13 @@ cd stork-bot
 npm install
 ```
 ## 配置
-- 创建并填写 config.json 文件：
+- 填写 accounts.js 文件：
 
 ```sh
-{
-  "cognito": {
-    "region": "ap-northeast-1",
-    "clientId": "5msns4n49hmg3dftp2tp1t2iuh",
-    "userPoolId": "ap-northeast-1_M22I44OpC",
-    "username": "your-email@example.com",
-    "password": "your-password"
-  },
-  "stork": {
-    "intervalSeconds": 5
-  },
-  "threads": {
-    "maxWorkers": 1
-  }
-}
+export const accounts = [
+  { username: "email1", password: "pass1" },
+  { username: "email2", password: "pass2" },
+];
 ```
 
 
