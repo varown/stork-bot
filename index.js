@@ -11,26 +11,20 @@ import { fileURLToPath } from "url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Configuration loading and validation
 function loadConfig() {
   try {
     const configPath = path.join(__dirname, "config.json");
-
     if (!fs.existsSync(configPath)) {
-      log(`未在 ${configPath} 找到配置文件，使用默认配置`, "WARN");
+      log(`未找到配置文件 ${configPath}，使用默认配置`, "WARN");
       const defaultConfig = {
         cognito: {
           region: "ap-northeast-1",
           clientId: "5msns4n49hmg3dftp2tp1t2iuh",
           userPoolId: "ap-northeast-1_M22I44OpC",
-          username: "",
-          password: "",
         },
-        stork: {
-          intervalSeconds: 10,
-        },
-        threads: {
-          maxWorkers: 10,
-        },
+        stork: { intervalSeconds: 30 },
+        threads: { maxWorkers: 1 },
       };
       fs.writeFileSync(
         configPath,
@@ -41,8 +35,8 @@ function loadConfig() {
     }
 
     const userConfig = JSON.parse(fs.readFileSync(configPath, "utf8"));
-    log("已成功从 config.json 加载配置 \n");
-    log("已成功从 accounts.js 加载账户");
+    log("已成功加载 config.json");
+    log("已成功加载 accounts.js");
     return userConfig;
   } catch (error) {
     log(`加载配置出错: ${error.message}`, "ERROR");
@@ -80,10 +74,7 @@ function validateConfig() {
     console.log("\n请在 accounts.js 文件中更新您的凭据:");
     console.log(
       JSON.stringify(
-        {
-          username: "YOUR_EMAIL",
-          password: "YOUR_PASSWORD",
-        },
+        { username: "YOUR_EMAIL", password: "YOUR_PASSWORD" },
         null,
         2
       )
@@ -93,18 +84,16 @@ function validateConfig() {
   return true;
 }
 
+// Utility functions
 const poolData = {
   UserPoolId: config.cognito.userPoolId,
   ClientId: config.cognito.clientId,
 };
 const userPool = new AmazonCognitoIdentity.CognitoUserPool(poolData);
 
-function getTimestamp() {
-  const now = new Date();
-  return now.toISOString().replace("T", " ").substr(0, 19);
-}
-
-function getFormattedDate() {
+const getTimestamp = () =>
+  new Date().toISOString().replace("T", " ").substr(0, 19);
+const getFormattedDate = () => {
   const now = new Date();
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(
     2,
@@ -114,16 +103,21 @@ function getFormattedDate() {
   ).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}:${String(
     now.getSeconds()
   ).padStart(2, "0")}`;
-}
-
-function log(message, type = "INFO") {
+};
+const log = (message, type = "INFO") =>
   console.log(`[${getFormattedDate()}] [${type}] ${message}`);
-}
 
 function loadProxies() {
   try {
+    const rotate = (arr) => {
+      for (let i = arr.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+      }
+      return arr;
+    };
     if (!fs.existsSync(config.threads.proxyFile)) {
-      log(`在 ${config.threads.proxyFile} 未找到代理文件，创建空文件`, "WARN");
+      log(`未找到代理文件 ${config.threads.proxyFile}，创建空文件`, "WARN");
       fs.writeFileSync(config.threads.proxyFile, "", "utf8");
       return [];
     }
@@ -132,14 +126,17 @@ function loadProxies() {
       .split("\n")
       .map((line) => line.trim())
       .filter((line) => line && !line.startsWith("#"));
+    const rotatedProxy = rotate(proxies);
     log(`从 ${config.threads.proxyFile} 加载了 ${proxies.length} 个代理`);
-    return proxies;
+    log(`尝试使用 ${rotatedProxy[0]} 运行`);
+    return rotatedProxy;
   } catch (error) {
     log(`加载代理出错: ${error.message}`, "ERROR");
     return [];
   }
 }
 
+// Authentication classes and functions
 class CognitoAuth {
   constructor(username, password) {
     this.username = username;
@@ -240,10 +237,11 @@ class TokenManager {
   }
 }
 
+// Stork API interaction functions
 async function getTokens() {
   try {
     if (!fs.existsSync(config.stork.tokenPath))
-      throw new Error(`在 ${config.stork.tokenPath} 未找到令牌文件`);
+      throw new Error(`未找到令牌文件 ${config.stork.tokenPath}`);
     const tokensData = await fs.promises.readFile(
       config.stork.tokenPath,
       "utf8"
@@ -280,6 +278,35 @@ function getProxyAgent(proxy) {
   if (proxy.startsWith("socks4") || proxy.startsWith("socks5"))
     return new SocksProxyAgent(proxy);
   throw new Error(`不支持的代理协议: ${proxy}`);
+}
+
+async function refreshTokens(refreshToken) {
+  try {
+    log("通过 Stork API 刷新访问令牌...");
+    const response = await axios({
+      method: "POST",
+      url: `${config.stork.authURL}/refresh`,
+      headers: {
+        "Content-Type": "application/json",
+        "User-Agent": config.stork.userAgent,
+        "Origin": config.stork.origin,
+      },
+      data: { refresh_token: refreshToken },
+    });
+    const tokens = {
+      accessToken: response.data.access_token,
+      idToken: response.data.id_token || "",
+      refreshToken: response.data.refresh_token || refreshToken,
+      isAuthenticated: true,
+      isVerifying: false,
+    };
+    await saveTokens(tokens);
+    log("通过 Stork API 成功刷新令牌");
+    return tokens;
+  } catch (error) {
+    log(`令牌刷新失败: ${error.message}`, "ERROR");
+    throw error;
+  }
 }
 
 async function getSignedPrices(tokens) {
@@ -359,6 +386,7 @@ async function getUserStats(tokens) {
   }
 }
 
+// Price validation function
 function validatePrice(priceData) {
   try {
     log(`正在验证 ${priceData.asset || "未知资产"} 的数据`);
@@ -380,6 +408,7 @@ function validatePrice(priceData) {
   }
 }
 
+// Worker thread logic
 if (!isMainThread) {
   const { priceData, tokens, proxy } = workerData;
 
@@ -404,6 +433,7 @@ if (!isMainThread) {
   validateAndSend();
 } else {
   let previousStats = { validCount: 0, invalidCount: 0 };
+  let jobs = 0;
 
   async function runValidationProcess(tokenManager) {
     try {
@@ -426,7 +456,7 @@ if (!isMainThread) {
       }
 
       const signedPrices = await getSignedPrices(tokens);
-      const proxies = loadProxies();
+      const proxies = await loadProxies();
 
       if (!signedPrices || signedPrices.length === 0) {
         log("没有要验证的数据");
@@ -456,22 +486,26 @@ if (!isMainThread) {
         const batch = batches[i];
         const proxy = proxies.length > 0 ? proxies[i % proxies.length] : null;
 
-        batch.forEach((priceData) => {
-          workers.push(
-            new Promise((resolve) => {
-              const worker = new Worker(__filename, {
-                workerData: { priceData, tokens, proxy },
-              });
-              worker.on("message", resolve);
-              worker.on("error", (error) =>
-                resolve({ success: false, error: error.message })
-              );
-              worker.on("exit", () =>
-                resolve({ success: false, error: "Worker exited" })
-              );
-            })
-          );
-        });
+        workers.push(
+          ...batch.map(
+            (priceData) =>
+              new Promise((resolve) => {
+                const worker = new Worker(__filename, {
+                  workerData: { priceData, tokens, proxy },
+                });
+                worker.on("message", resolve);
+                worker.on("error", (error) =>
+                  resolve({ success: false, error: error.message })
+                );
+                worker.on("exit", (code) =>
+                  resolve({
+                    success: false,
+                    error: `Worker exited with code ${code}`,
+                  })
+                );
+              })
+          )
+        );
       }
 
       const results = await Promise.all(workers);
@@ -497,13 +531,6 @@ if (!isMainThread) {
       log(`成功: ${actualValidIncrease}`);
       log(`失败: ${actualInvalidIncrease}`);
       log("--------- 完成 ---------");
-
-      if (jobs < accounts.length) {
-        setTimeout(() => main(), config.stork.intervalSeconds * 1000);
-      } else if (jobs == accounts.length - 1 || jobs === accounts.length) {
-        jobs = 0;
-        setTimeout(() => main(), config.stork.intervalSeconds * 1000);
-      }
     } catch (error) {
       log(`验证过程停止: ${error.message}`, "ERROR");
     }
@@ -515,6 +542,7 @@ if (!isMainThread) {
       return;
     }
 
+    console.clear();
     console.log(`时间: ${getTimestamp()}`);
     console.log("---------------------------------------------");
     console.log(`用户: ${userData.email || "N/A"}`);
@@ -553,16 +581,35 @@ if (!isMainThread) {
       log("初始身份验证成功");
 
       runValidationProcess(tokenManager);
+
+      // Refresh token periodically
       setInterval(async () => {
         await tokenManager.getValidToken();
         log("令牌已通过 Cognito 刷新");
       }, 50 * 60 * 1000);
     } catch (error) {
       log(`应用程序启动失败: ${error.message}`, "ERROR");
-      main();
+      process.exit(1);
     }
   }
 
-  let jobs = 0;
-  main();
+  // Schedule main to run for each account
+  const runTasks = async () => {
+    for (let i = 0; i < accounts.length; i++) {
+      jobs = i;
+      await main();
+      await new Promise((resolve) =>
+        setTimeout(resolve, config.stork.intervalSeconds * 1000)
+      );
+    }
+    runTasks();
+  };
+  try {
+    runTasks();
+  } catch (e) {
+    log(`应用程序启动失败: ${e.message}`, "ERROR");
+    log("等待 10 分钟后重试...");
+    await new Promise((resolve) => setTimeout(resolve, 600 * 1000));
+    runTasks();
+  }
 }
