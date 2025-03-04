@@ -282,35 +282,6 @@ function getProxyAgent(proxy) {
   throw new Error(`不支持的代理协议: ${proxy}`);
 }
 
-async function refreshTokens(refreshToken) {
-  try {
-    log("通过 Stork API 刷新访问令牌...");
-    const response = await axios({
-      method: "POST",
-      url: `${config.stork.authURL}/refresh`,
-      headers: {
-        "Content-Type": "application/json",
-        "User-Agent": config.stork.userAgent,
-        "Origin": config.stork.origin,
-      },
-      data: { refresh_token: refreshToken },
-    });
-    const tokens = {
-      accessToken: response.data.access_token,
-      idToken: response.data.id_token || "",
-      refreshToken: response.data.refresh_token || refreshToken,
-      isAuthenticated: true,
-      isVerifying: false,
-    };
-    await saveTokens(tokens);
-    log("通过 Stork API 成功刷新令牌");
-    return tokens;
-  } catch (error) {
-    log(`令牌刷新失败: ${error.message}`, "ERROR");
-    throw error;
-  }
-}
-
 async function getSignedPrices(tokens) {
   try {
     log("获取签名价格数据...");
@@ -582,17 +553,13 @@ if (!isMainThread) {
       log("初始身份验证成功");
 
       runValidationProcess(tokenManager);
-
-      //prevent spam by disabling this interval, because up there was triggered with jobs sequence
-      //     setInterval(() => runValidationProcess(tokenManager), config.stork.intervalSeconds * 1000);
-
       setInterval(async () => {
         await tokenManager.getValidToken();
         log("令牌已通过 Cognito 刷新");
       }, 50 * 60 * 1000);
     } catch (error) {
       log(`应用程序启动失败: ${error.message}`, "ERROR");
-      process.exit(1);
+      main();
     }
   }
 
