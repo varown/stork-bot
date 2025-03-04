@@ -11,16 +11,13 @@ import { fileURLToPath } from "url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// global.navigator = { userAgent: 'node' };
-
-// Load configuration from config.json
 function loadConfig() {
   try {
     const configPath = path.join(__dirname, "config.json");
 
     if (!fs.existsSync(configPath)) {
-      log(`未在 ${configPath} 找到配置文件，使用默认配置`, "WARN");
-      // Create default config file if it doesn't exist
+      log(`在 ${configPath} 未找到配置文件，使用默认配置`, "WARN");
+
       const defaultConfig = {
         cognito: {
           region: "ap-northeast-1",
@@ -47,8 +44,8 @@ function loadConfig() {
     log("已成功从 accounts.js 加载账户");
     return userConfig;
   } catch (error) {
-    log(`加载配置出错: ${error.message}`, "ERROR");
-    throw new Error("配置加载失败");
+    log(`加载配置错误: ${error.message}`, "ERROR");
+    throw new Error("Failed to load configuration");
   }
 }
 
@@ -78,8 +75,8 @@ const config = {
 
 function validateConfig() {
   if (!accounts[0].username || !accounts[0].password) {
-    log("错误: 必须在 accounts.js 中设置用户名和密码", "ERROR");
-    console.log("\n请在 accounts.js 文件中更新您的凭据:");
+    log("ERROR: 必须在 accounts.js 中设置用户名和密码", "ERROR");
+    console.log("\n请使用您的凭据更新您的 accouns.js 文件:");
     console.log(
       JSON.stringify(
         {
@@ -146,7 +143,7 @@ function loadProxies() {
     log(`尝试使用 ${rotatedProxy[0]} 运行`);
     return rotatedProxy;
   } catch (error) {
-    log(`加载代理出错: ${error.message}`, "ERROR");
+    log(`加载代理错误: ${error.message}`, "ERROR");
     return [];
   }
 }
@@ -229,7 +226,7 @@ class TokenManager {
         : await this.auth.authenticate();
       await this.updateTokens(result);
     } catch (error) {
-      log(`令牌刷新/认证出错: ${error.message}`, "ERROR");
+      log(`令牌刷新/认证错误: ${error.message}`, "ERROR");
       throw error;
     }
   }
@@ -265,7 +262,7 @@ async function getTokens() {
     log(`成功读取访问令牌: ${tokens.accessToken.substring(0, 10)}...`);
     return tokens;
   } catch (error) {
-    log(`读取令牌出错: ${error.message}`, "ERROR");
+    log(`读取令牌错误: ${error.message}`, "ERROR");
     throw error;
   }
 }
@@ -280,7 +277,7 @@ async function saveTokens(tokens) {
     log("令牌已成功保存");
     return true;
   } catch (error) {
-    log(`保存令牌出错: ${error.message}`, "ERROR");
+    log(`保存令牌错误: ${error.message}`, "ERROR");
     return false;
   }
 }
@@ -291,35 +288,6 @@ function getProxyAgent(proxy) {
   if (proxy.startsWith("socks4") || proxy.startsWith("socks5"))
     return new SocksProxyAgent(proxy);
   throw new Error(`不支持的代理协议: ${proxy}`);
-}
-
-async function refreshTokens(refreshToken) {
-  try {
-    log("通过 Stork API 刷新访问令牌...");
-    const response = await axios({
-      method: "POST",
-      url: `${config.stork.authURL}/refresh`,
-      headers: {
-        "Content-Type": "application/json",
-        "User-Agent": config.stork.userAgent,
-        "Origin": config.stork.origin,
-      },
-      data: { refresh_token: refreshToken },
-    });
-    const tokens = {
-      accessToken: response.data.access_token,
-      idToken: response.data.id_token || "",
-      refreshToken: response.data.refresh_token || refreshToken,
-      isAuthenticated: true,
-      isVerifying: false,
-    };
-    await saveTokens(tokens);
-    log("通过 Stork API 成功刷新令牌");
-    return tokens;
-  } catch (error) {
-    log(`令牌刷新失败: ${error.message}`, "ERROR");
-    throw error;
-  }
 }
 
 async function getSignedPrices(tokens) {
@@ -348,10 +316,10 @@ async function getSignedPrices(tokens) {
         ...assetData,
       };
     });
-    log(`成功检索 ${result.length} 个签名价格`);
+    log(`成功检索到 ${result.length} 个签名价格`);
     return result;
   } catch (error) {
-    log(`获取签名价格出错: ${error.message}`, "ERROR");
+    log(`获取签名价格错误: ${error.message}`, "ERROR");
     throw error;
   }
 }
@@ -371,10 +339,13 @@ async function sendValidation(tokens, msgHash, isValid, proxy) {
       httpsAgent: agent,
       data: { msg_hash: msgHash, valid: isValid },
     });
-    log(`✓ 验证成功 ${msgHash.substring(0, 10)}... via ${proxy || "direct"}`);
+    log(`✓ 成功验证 ${msgHash.substring(0, 10)}... via ${proxy || "direct"}`);
     return response.data;
   } catch (error) {
-    log(`✗ 验证失败 ${msgHash.substring(0, 10)}...: ${error.message}`, "ERROR");
+    log(
+      `✗ 验证 ${msgHash.substring(0, 10)}... 失败: ${error.message}`,
+      "ERROR"
+    );
     throw error;
   }
 }
@@ -394,7 +365,7 @@ async function getUserStats(tokens) {
     });
     return response.data.data;
   } catch (error) {
-    log(`获取用户统计信息出错: ${error.message}`, "ERROR");
+    log(`获取用户统计信息错误: ${error.message}`, "ERROR");
     throw error;
   }
 }
@@ -410,12 +381,12 @@ function validatePrice(priceData) {
     const dataTime = new Date(priceData.timestamp).getTime();
     const timeDiffMinutes = (currentTime - dataTime) / (1000 * 60);
     if (timeDiffMinutes > 60) {
-      log(`数据已过期（${Math.round(timeDiffMinutes)} 分钟前）`, "WARN");
+      log(`数据太旧（${Math.round(timeDiffMinutes)} 分钟前）`, "WARN");
       return false;
     }
     return true;
   } catch (error) {
-    log(`验证出错: ${error.message}`, "ERROR");
+    log(`验证错误: ${error.message}`, "ERROR");
     return false;
   }
 }
@@ -469,7 +440,7 @@ if (!isMainThread) {
       const proxies = await loadProxies();
 
       if (!signedPrices || signedPrices.length === 0) {
-        log("没有要验证的数据");
+        log("没有数据要验证");
         const userData = await getUserStats(tokens);
         displayStats(userData);
         return;
@@ -551,7 +522,7 @@ if (!isMainThread) {
 
   function displayStats(userData) {
     if (!userData || !userData.stats) {
-      log("没有可显示的有效统计数据", "WARN");
+      log("没有有效的统计数据可供显示", "WARN");
       return;
     }
 
@@ -560,7 +531,7 @@ if (!isMainThread) {
     console.log("---------------------------------------------");
     console.log(`用户: ${userData.email || "N/A"}`);
     console.log(`ID: ${userData.id || "N/A"}`);
-    console.log(`推荐代码: ${userData.referral_code || "N/A"}`);
+    console.log(`推荐码: ${userData.referral_code || "N/A"}`);
     console.log("---------------------------------------------");
     console.log("验证统计信息:");
     console.log(
@@ -597,11 +568,10 @@ if (!isMainThread) {
 
       setInterval(async () => {
         await tokenManager.getValidToken();
-        log("令牌已通过 Cognito 刷新");
+        log("通过 Cognito 刷新令牌");
       }, 50 * 60 * 1000);
     } catch (error) {
       log(`应用程序启动失败: ${error.message}`, "ERROR");
-      // 重试
       log("等待 10 分钟后重试...");
       await new Promise((resolve) => setTimeout(resolve, 600 * 1000));
       main();
